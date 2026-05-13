@@ -157,6 +157,48 @@ app.post("/request", (req, res) => {
   return res.json({ ok: true });
 });
 
+
+// Ping / registro de conexión activa (llamado por la extensión al iniciar)
+app.post("/devices/ping", (req, res) => {
+  const { machineId } = req.body;
+  if (!machineId) return res.json({ ok: false });
+  const db     = loadDB();
+  const device = db.devices.find(d => d.id === (machineId||"").toUpperCase());
+  if (device && device.autorizado) {
+    device.ultimaConexion = new Date().toISOString();
+    device.conexiones = (device.conexiones || 0) + 1;
+    addLog(db, "PING", machineId, "Conexión activa");
+    saveDB(db);
+    return res.json({ ok: true });
+  }
+  res.json({ ok: false });
+});
+
+// Alias POST /devices/check (compatibilidad con versiones anteriores de la extensión)
+app.post("/devices/check", (req, res) => {
+  const { machineId } = req.body;
+  if (!machineId) return res.json({ authorized: false, status: "invalid" });
+  const db     = loadDB();
+  const device = db.devices.find(d => d.id === (machineId||"").toUpperCase());
+  if (device) {
+    device.ultimaConexion = new Date().toISOString();
+    device.conexiones = (device.conexiones || 0) + 1;
+    saveDB(db);
+    return res.json({ authorized: device.autorizado, status: device.estado || (device.autorizado ? "active" : "unauthorized") });
+  }
+  // Nuevo equipo: registrar como pendiente
+  db.devices.push({
+    id: (machineId||"").toUpperCase(),
+    autorizado: false, estado: "pendiente", nombre: "",
+    fechaSolicitud: new Date().toISOString(),
+    ultimaConexion: new Date().toISOString(),
+    conexiones: 1, notas: ""
+  });
+  addLog(db, "EQUIPO_NUEVO", machineId, "Acceso via /devices/check");
+  saveDB(db);
+  res.json({ authorized: false, status: "pending" });
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ENDPOINTS DE ADMINISTRACIÓN
 // ══════════════════════════════════════════════════════════════════════════════
